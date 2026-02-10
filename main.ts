@@ -1,51 +1,22 @@
-import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
-import {StdioServerTransport} from "@modelcontextprotocol/sdk/server/stdio.js";
-import {z} from "zod";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 
 const server = new McpServer({
   name: "Demo",
   version: "1.0.0",
 });
 
-const weatherDescriptions: Record<number, string> = {
-  0: "Clear sky",
-  1: "Mainly clear",
-  2: "Partly cloudy",
-  3: "Overcast",
-  45: "Fog",
-  48: "Depositing rime fog",
-  51: "Light drizzle",
-  53: "Moderate drizzle",
-  55: "Dense drizzle",
-  61: "Light rain",
-  63: "Moderate rain",
-  65: "Heavy rain",
-  66: "Freezing rain (light)",
-  67: "Freezing rain (heavy)",
-  71: "Light snow fall",
-  73: "Moderate snow fall",
-  75: "Heavy snow fall",
-  77: "Snow grains",
-  80: "Light rain showers",
-  81: "Moderate rain showers",
-  82: "Violent rain showers",
-  85: "Light snow showers",
-  86: "Heavy snow showers",
-  95: "Thunderstorm",
-  96: "Thunderstorm with slight hail",
-  99: "Thunderstorm with heavy hail",
-};
-
 server.registerTool(
     "fetch-weather",
     {
       title: "Fetch Weather",
       description:
-          "Fetch the weather forecast for a specific hour of the current day in Cali, Colombia",
+          "Fetch raw hourly weather forecast data for a specific hour of the current day in Cali, Colombia",
       inputSchema: {
         hour: z
             .string()
-            .describe("Hour in 24h format (e.g. 09, 14, 18)"),
+            .describe("Hour in 24h format (00–23)"),
       },
     },
     async ({hour}) => {
@@ -78,10 +49,10 @@ server.registerTool(
         };
       }
 
-      const {latitude, longitude} = geoData.results[0];
+      const location = geoData.results[0];
 
       const forecastResponse = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode&timezone=America/Bogota`
+          `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude}&longitude=${location.longitude}&hourly=temperature_2m,weathercode,relativehumidity_2m,windspeed_10m&timezone=America/Bogota`
       );
       const forecastData = await forecastResponse.json();
 
@@ -101,15 +72,33 @@ server.registerTool(
         };
       }
 
-      const temperature = forecastData.hourly.temperature_2m[index];
-      const weatherCode = forecastData.hourly.weathercode[index];
-      const description = weatherDescriptions[weatherCode] ?? "Unknown weather condition";
-
       return {
         content: [
           {
             type: "text",
-            text: `Weather in Cali at ${hour}:00 — ${temperature}°C, ${description}`,
+            text: JSON.stringify(
+                {
+                  location: {
+                    name: location.name,
+                    country: location.country,
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    timezone: forecastData.timezone,
+                  },
+                  requestedTime: targetTime,
+                  units: forecastData.hourly_units,
+                  forecast: {
+                    temperature_2m: forecastData.hourly.temperature_2m[index],
+                    weathercode: forecastData.hourly.weathercode[index],
+                    relativehumidity_2m:
+                        forecastData.hourly.relativehumidity_2m[index],
+                    windspeed_10m: forecastData.hourly.windspeed_10m[index],
+                  },
+                  rawIndex: index,
+                },
+                null,
+                2
+            ),
           },
         ],
       };
